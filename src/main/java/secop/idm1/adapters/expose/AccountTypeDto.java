@@ -5,7 +5,8 @@ package secop.idm1.adapters.expose;
 
 import java.util.List;
 
-public record AccountTypeDto(String name, String kind, String pattern, List<MetadataFieldDto> metadata) {
+public record AccountTypeDto(String name, String kind, String pattern, List<MetadataFieldDto> metadata,
+        String identityTemplate, String identifierTemplate) {
 
     public record MetadataFieldDto(String name, String type, boolean required) {
     }

@@ -42,9 +42,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(a -> a
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/identities", "/identities/**", "/accounts", "/accounts/**",
-                                "/account-types")
+                                "/account-types", "/contracts", "/contract-types")
                                 .hasAnyRole(READER, PUBLISHER, ADMIN)
-                        .requestMatchers(HttpMethod.POST, "/identities", "/accounts", "/accounts/**")
+                        .requestMatchers(HttpMethod.POST, "/identities", "/identities/**", "/accounts", "/accounts/**")
                                 .hasAnyRole(PUBLISHER, ADMIN)
                         .requestMatchers(HttpMethod.PUT, "/identities/**", "/accounts/**")
                                 .hasAnyRole(PUBLISHER, ADMIN)

@@ -14,7 +14,7 @@ Codes d'erreur communs : `401` (jeton absent ou invalide), `403` (rôle insuffis
 Représentation :
 
 ```json
-{ "employeeId": "e1234", "firstName": "Alice", "lastName": "Martin", "email": "alice@example.org" }
+{ "employeeId": "I000042", "firstName": "Alice", "lastName": "Martin", "email": "alice@example.org" }
 ```
 
 | Endpoint | Corps | Réponse |
@@ -22,7 +22,7 @@ Représentation :
 | `GET /identities` | | `200` liste |
 | `GET /identities/{employeeId}` | | `200`, `404` |
 | `GET /identities/{employeeId}/accounts` | | `200` comptes de l'identité, `404` |
-| `POST /identities` | identité | `201` + `Location`, `400` (matricule vide), `409` (matricule existant) |
+| `POST /identities` | `firstName`, `lastName`, `email` (le matricule `I<DDDDDD>` est généré) | `201` + `Location` + identité avec son matricule |
 | `PUT /identities/{employeeId}` | identité | `200` (le matricule n'est pas modifiable), `404` |
 | `DELETE /identities/{employeeId}` | | `204`, `404` ; les comptes liés deviennent non corrélés |
 
@@ -31,16 +31,29 @@ Représentation :
 `GET /account-types` : types `USER` configurés.
 
 ```json
-[{ "name": "employee", "kind": "USER", "pattern": "(?<identity>[a-z]+[0-9]+)(-adm)?",
-   "metadata": [{ "name": "department", "type": "STRING", "required": true }] }]
+[{ "name": "admin", "kind": "USER", "pattern": "A(?<number>\\d{6})",
+   "metadata": [{ "name": "department", "type": "STRING", "required": false }],
+   "identityTemplate": "I{number}", "identifierTemplate": "A{number}" }]
 ```
+
+## Contrats
+
+`GET /contract-types` : types de contrat configurés (`name`, `metadata`).
+
+| Endpoint | Corps | Réponse |
+|---|---|---|
+| `GET /contracts` | filtres `identity`, `type` | `200` liste |
+| `GET /identities/{employeeId}/contracts` | | `200`, `404` |
+| `POST /identities/{employeeId}/contracts` | `type`, `startDate`, `endDate`, `metadata` | `201`, `400` (type ou métadonnées invalides), `404` |
+| `PUT /identities/{employeeId}/contracts/{id}` | idem | `200`, `400`, `404` |
+| `DELETE /identities/{employeeId}/contracts/{id}` | | `204`, `404` |
 
 ## Comptes
 
 Représentation :
 
 ```json
-{ "identifier": "e1234-adm", "type": "employee", "identity": "e1234",
+{ "identifier": "A000042", "type": "admin", "identity": "I000042",
   "source": "API", "metadata": { "department": "IT" }, "jobId": "…", "createdAt": "…" }
 ```
 

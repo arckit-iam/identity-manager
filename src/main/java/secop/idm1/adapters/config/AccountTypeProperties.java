@@ -35,6 +35,10 @@ public class AccountTypeProperties {
         private String name;
         private AccountKind kind;
         private String pattern;
+        /** Matricule de l'identité, construit à partir des groupes nommés ; par défaut, le groupe {@code identity}. */
+        private String identityTemplate;
+        /** Identifiant généré à partir du matricule ({identity}, {number}) ; vide : l'identifiant est saisi. */
+        private String identifierTemplate;
         private List<Field> metadata = new ArrayList<>();
     }
 

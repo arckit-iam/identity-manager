@@ -9,10 +9,9 @@ import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import secop.idm1.domain.exception.IdentityConflictException;
-import secop.idm1.domain.exception.InvalidAccountException;
 import secop.idm1.domain.exception.NotFoundException;
 import secop.idm1.domain.model.Identity;
+import secop.idm1.domain.port.EmployeeIdGenerator;
 import secop.idm1.domain.port.IdentityProvider;
 import secop.idm1.domain.service.IdentityManager;
 
@@ -20,10 +19,12 @@ import secop.idm1.domain.service.IdentityManager;
 public class HexaIdentityService implements IdentityManager {
 
     private final IdentityProvider identityProvider;
+    private final EmployeeIdGenerator employeeIdGenerator;
 
     @Autowired
-    HexaIdentityService(IdentityProvider identityProvider) {
+    HexaIdentityService(IdentityProvider identityProvider, EmployeeIdGenerator employeeIdGenerator) {
         this.identityProvider = identityProvider;
+        this.employeeIdGenerator = employeeIdGenerator;
     }
 
     @Override
@@ -39,12 +40,11 @@ public class HexaIdentityService implements IdentityManager {
 
     @Override
     public Identity createIdentity(Identity identity) {
-        if (identity.getEmployeeId() == null || identity.getEmployeeId().isBlank()) {
-            throw new InvalidAccountException("The employee id is required");
-        }
-        if (identityProvider.existsByEmployeeId(identity.getEmployeeId())) {
-            throw new IdentityConflictException("The identity already exists: " + identity.getEmployeeId());
-        }
+        String employeeId;
+        do {
+            employeeId = employeeIdGenerator.next();
+        } while (identityProvider.existsByEmployeeId(employeeId));
+        identity.setEmployeeId(employeeId);
         identity.setCreatedAt(OffsetDateTime.now());
         return identityProvider.save(identity);
     }

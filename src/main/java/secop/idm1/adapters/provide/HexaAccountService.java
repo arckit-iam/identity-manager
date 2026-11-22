@@ -65,7 +65,7 @@ public class HexaAccountService implements AccountManager {
     public Account createAccount(String identifier, String typeName, String employeeId,
             Map<String, Object> metadata) {
         if (identifier == null || identifier.isBlank()) {
-            throw new InvalidAccountException("The account identifier is required");
+            identifier = generateIdentifier(typeName, employeeId);
         }
         if (accountProvider.existsByIdentifier(identifier)) {
             throw new AccountConflictException("The account already exists: " + identifier);
@@ -90,6 +90,23 @@ public class HexaAccountService implements AccountManager {
         account.setJobId(jobPublisher.publishCreateAccount(account));
         account.setCreatedAt(OffsetDateTime.now());
         return accountProvider.save(account);
+    }
+
+    private String generateIdentifier(String typeName, String employeeId) {
+        if (typeName == null || employeeId == null) {
+            throw new InvalidAccountException(
+                    "The account identifier is required, unless a type and an identity are given to generate it");
+        }
+        AccountType type = catalog.findByName(typeName)
+                .orElseThrow(() -> new InvalidAccountException("Unknown account type: " + typeName));
+        if (type.kind() != AccountKind.USER) {
+            throw new InvalidAccountException("Type " + typeName + " is not a user account type");
+        }
+        if (!identityProvider.existsByEmployeeId(employeeId)) {
+            throw new NotFoundException("The identity does not exist: " + employeeId);
+        }
+        return type.identifierFor(employeeId).orElseThrow(
+                () -> new InvalidAccountException("Type " + typeName + " cannot generate an identifier"));
     }
 
     private AccountMatch resolveType(String identifier, String typeName) {

@@ -23,6 +23,7 @@ public interface AccountManager {
      * Crée et provisionne un compte. Le type et l'identité sont déduits de l'identifiant par les regex
      * quand ils ne sont pas fournis.
      */
+    /** L'identifiant peut être omis si le type sait le générer à partir du matricule de l'identité. */
     Account createAccount(String identifier, String typeName, String employeeId, Map<String, Object> metadata);
 
     Account updateMetadata(String identifier, Map<String, Object> metadata);

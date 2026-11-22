@@ -4,10 +4,10 @@
 package secop.idm1.adapters.provide;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -17,21 +17,22 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import secop.idm1.domain.exception.IdentityConflictException;
-import secop.idm1.domain.exception.InvalidAccountException;
 import secop.idm1.domain.exception.NotFoundException;
 import secop.idm1.domain.model.Identity;
+import secop.idm1.domain.port.EmployeeIdGenerator;
 import secop.idm1.domain.port.IdentityProvider;
 
 class HexaIdentityServiceTest {
 
     private IdentityProvider provider;
+    private EmployeeIdGenerator generator;
     private HexaIdentityService service;
 
     @BeforeEach
     void setUp() {
         provider = mock(IdentityProvider.class);
-        service = new HexaIdentityService(provider);
+        generator = mock(EmployeeIdGenerator.class);
+        service = new HexaIdentityService(provider, generator);
         when(provider.save(any(Identity.class))).thenAnswer(i -> i.getArgument(0));
     }
 
@@ -46,43 +47,50 @@ class HexaIdentityServiceTest {
 
     @Test
     void listsAndFetchesIdentities() {
-        Identity alice = identity("e1234");
+        Identity alice = identity("I000001");
         when(provider.findAll()).thenReturn(List.of(alice));
-        when(provider.findByEmployeeId("e1234")).thenReturn(Optional.of(alice));
+        when(provider.findByEmployeeId("I000001")).thenReturn(Optional.of(alice));
 
         assertEquals(List.of(alice), service.getIdentities());
-        assertEquals(alice, service.getIdentity("e1234"));
+        assertEquals(alice, service.getIdentity("I000001"));
         assertThrows(NotFoundException.class, () -> service.getIdentity("absent"));
     }
 
     @Test
-    void createsAnIdentityWithACreationDate() {
-        Identity created = service.createIdentity(identity("e1234"));
+    void createsAnIdentityWithAGeneratedEmployeeIdAndACreationDate() {
+        when(generator.next()).thenReturn("I000042");
 
-        assertEquals("e1234", created.getEmployeeId());
-        assertEquals(true, created.getCreatedAt() != null);
+        Identity created = service.createIdentity(identity(null));
+
+        assertEquals("I000042", created.getEmployeeId());
+        assertNotNull(created.getCreatedAt());
     }
 
     @Test
-    void createRejectsBlankAndDuplicateEmployeeIds() {
-        when(provider.existsByEmployeeId("e1234")).thenReturn(true);
+    void createIgnoresAnEmployeeIdGivenByTheCaller() {
+        when(generator.next()).thenReturn("I000043");
 
-        assertThrows(InvalidAccountException.class, () -> service.createIdentity(identity(" ")));
-        assertThrows(InvalidAccountException.class, () -> service.createIdentity(identity(null)));
-        assertThrows(IdentityConflictException.class, () -> service.createIdentity(identity("e1234")));
-        verify(provider, never()).save(any());
+        assertEquals("I000043", service.createIdentity(identity("I999999")).getEmployeeId());
+    }
+
+    @Test
+    void createSkipsAGeneratedEmployeeIdAlreadyInUse() {
+        when(generator.next()).thenReturn("I000001", "I000002");
+        when(provider.existsByEmployeeId("I000001")).thenReturn(true);
+
+        assertEquals("I000002", service.createIdentity(identity(null)).getEmployeeId());
     }
 
     @Test
     void updateChangesTheNamesAndTheEmailButNotTheEmployeeId() {
-        when(provider.findByEmployeeId("e1234")).thenReturn(Optional.of(identity("e1234")));
+        when(provider.findByEmployeeId("I000001")).thenReturn(Optional.of(identity("I000001")));
         Identity changes = identity("other");
         changes.setLastName("Durand");
         changes.setEmail("a.durand@example.org");
 
-        Identity updated = service.updateIdentity("e1234", changes);
+        Identity updated = service.updateIdentity("I000001", changes);
 
-        assertEquals("e1234", updated.getEmployeeId());
+        assertEquals("I000001", updated.getEmployeeId());
         assertEquals("Durand", updated.getLastName());
         assertEquals("a.durand@example.org", updated.getEmail());
         assertThrows(NotFoundException.class, () -> service.updateIdentity("absent", changes));
@@ -90,11 +98,11 @@ class HexaIdentityServiceTest {
 
     @Test
     void deletesAnExistingIdentityOnly() {
-        when(provider.findByEmployeeId("e1234")).thenReturn(Optional.of(identity("e1234")));
+        when(provider.findByEmployeeId("I000001")).thenReturn(Optional.of(identity("I000001")));
 
-        service.deleteIdentity("e1234");
+        service.deleteIdentity("I000001");
 
-        verify(provider).deleteByEmployeeId("e1234");
+        verify(provider).deleteByEmployeeId("I000001");
         assertThrows(NotFoundException.class, () -> service.deleteIdentity("absent"));
     }
 }

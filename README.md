@@ -48,13 +48,19 @@ Toutes les routes exigent un jeton `Authorization: Bearer <jwt>` émis par [arc-
 | `GET` | `/identities` | `ARC_READER`, `ARC_PUBLISHER` ou `ARC_ADMIN` | Liste les identités |
 | `GET` | `/identities/{employeeId}` | idem | Retourne une identité |
 | `GET` | `/identities/{employeeId}/accounts` | idem | Comptes d'une identité |
-| `POST` | `/identities` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Crée une identité |
+| `POST` | `/identities` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Crée une identité (prénom, nom, e-mail) ; le matricule `I<DDDDDD>` est généré |
 | `PUT` | `/identities/{employeeId}` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Met à jour nom, prénom, e-mail |
 | `DELETE` | `/identities/{employeeId}` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Supprime l'identité (ses comptes deviennent non corrélés) |
+| `GET` | `/contract-types` | `ARC_READER`, `ARC_PUBLISHER` ou `ARC_ADMIN` | Types de contrat configurés |
+| `GET` | `/contracts` | idem | Liste (filtres `identity`, `type`) |
+| `GET` | `/identities/{employeeId}/contracts` | idem | Contrats d'une identité |
+| `POST` | `/identities/{employeeId}/contracts` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Ajoute un contrat (`type`, `startDate`, `endDate`, `metadata`) |
+| `PUT` | `/identities/{employeeId}/contracts/{id}` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Met à jour un contrat |
+| `DELETE` | `/identities/{employeeId}/contracts/{id}` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Supprime un contrat |
 | `GET` | `/account-types` | `ARC_READER`, `ARC_PUBLISHER` ou `ARC_ADMIN` | Types de compte utilisateur configurés |
 | `GET` | `/accounts` | idem | Liste (filtres `identity`, `type`, `uncorrelated=true`) |
 | `GET` | `/accounts/{identifier}` | idem | Retourne un compte |
-| `POST` | `/accounts` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Crée un compte (type et identité déduits par regex, job CREATE) |
+| `POST` | `/accounts` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Crée un compte (job CREATE) ; identifiant facultatif si `type` et `identity` sont fournis (généré par gabarit) |
 | `PUT` | `/accounts/{identifier}/metadata` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Remplace les métadonnées |
 | `PUT` | `/accounts/{identifier}/identity` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Corrèle manuellement le compte à une identité |
 | `POST` | `/accounts/correlate` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Rejoue les regex sur les comptes non corrélés |
@@ -68,20 +74,36 @@ Un **type de compte** est défini par le déploiement (Helm/variables d'environn
 
 - `name` : nom du type ;
 - `kind` : `USER` (géré ici) ou `NON_USER` (géré par product-manager, ignoré ici) ;
-- `pattern` : regex à correspondance complète avec un groupe nommé `identity` (matricule de l'identité) ;
+- `pattern` : regex à correspondance complète ; le groupe nommé `identity` désigne directement le matricule ;
+- `identityTemplate` (facultatif) : matricule déduit des groupes capturés, ex. `I{number}` ;
+- `identifierTemplate` (facultatif) : identifiant généré à la création d'un compte pour une identité, ex. `A{number}` (`{identity}` = matricule, `{number}` = ses chiffres) ;
 - `metadata` : champs autorisés (`name`, `type` = `STRING`/`NUMBER`/`BOOLEAN`, `required`).
 
 Les métadonnées sont stockées en `JSONB` (colonne `account.metadata`, index GIN) : ajouter un champ ne nécessite ni migration ni changement de modèle ; un champ inconnu, manquant (obligatoire) ou mal typé est refusé (`400`).
 
-Exemple : un compte `e1234` et son compte d'administration `e1234-adm` sont corrélés à l'identité de matricule `e1234`.
+Le **matricule** est généré à la création d'une identité (`I` + 6 chiffres, séquence PostgreSQL ; préfixe `ARC_IDENTITY_EMPLOYEE_ID_PREFIX`). Exemple : un compte `standard` porte le matricule (`I000042`), un compte `admin` porte `A000042` et est corrélé à l'identité `I000042`.
 
 ```yaml
-ARC_ACCOUNTS_TYPES_0_NAME: employee
+ARC_ACCOUNTS_TYPES_0_NAME: standard
 ARC_ACCOUNTS_TYPES_0_KIND: USER
-ARC_ACCOUNTS_TYPES_0_PATTERN: '(?<identity>[a-z]+[0-9]+)(-adm)?'
-ARC_ACCOUNTS_TYPES_0_METADATA_0_NAME: department
-ARC_ACCOUNTS_TYPES_0_METADATA_0_TYPE: STRING
-ARC_ACCOUNTS_TYPES_0_METADATA_0_REQUIRED: 'true'
+ARC_ACCOUNTS_TYPES_0_PATTERN: '(?<identity>I\d{6})'
+ARC_ACCOUNTS_TYPES_0_IDENTIFIERTEMPLATE: '{identity}'
+ARC_ACCOUNTS_TYPES_1_NAME: admin
+ARC_ACCOUNTS_TYPES_1_KIND: USER
+ARC_ACCOUNTS_TYPES_1_PATTERN: 'A(?<number>\d{6})'
+ARC_ACCOUNTS_TYPES_1_IDENTITYTEMPLATE: 'I{number}'
+ARC_ACCOUNTS_TYPES_1_IDENTIFIERTEMPLATE: 'A{number}'
+```
+
+## Contrats
+
+Une identité porte des **contrats** (prestataire, RH, stagiaire...). Les types de contrat sont configurables, avec des métadonnées typées stockées en `JSONB` et validées comme celles des comptes :
+
+```yaml
+ARC_CONTRACTS_TYPES_0_NAME: contractor
+ARC_CONTRACTS_TYPES_0_METADATA_0_NAME: company
+ARC_CONTRACTS_TYPES_0_METADATA_0_TYPE: STRING
+ARC_CONTRACTS_TYPES_0_METADATA_0_REQUIRED: 'true'
 ```
 
 Un compte découvert dont l'identité n'existe pas encore reste non corrélé jusqu'à `POST /accounts/correlate`.
@@ -102,7 +124,9 @@ Un compte découvert dont l'identité n'existe pas encore reste non corrélé ju
 | `ARC_PUBLISHER_URL` | URL d'arc-publisher (défaut `http://arc-publisher:8081`) |
 | `ARC_PUBLISHER_TARGET_SYSTEM` | Système cible des jobs (défaut `ad://DC01`) |
 | `ARC_PUBLISHER_SOURCE` | Valeur du champ `source` des jobs (défaut `identity-manager`) |
+| `ARC_IDENTITY_EMPLOYEE_ID_PREFIX` | Préfixe des matricules générés (défaut `I`) |
 | `ARC_ACCOUNTS_TYPES_<n>_*` | Types de compte (voir ci-dessus) |
+| `ARC_CONTRACTS_TYPES_<n>_*` | Types de contrat (voir ci-dessus) |
 | `ARC_DISCOVERY_ENABLED` | Active la découverte Kafka (défaut `false`) |
 | `ARC_DISCOVERY_TOPIC` | Topic des identités consolidées (défaut `arc.sync.identity`) |
 | `SPRING_KAFKA_BOOTSTRAP_SERVERS` | Brokers Kafka (défaut `localhost:9092`) |

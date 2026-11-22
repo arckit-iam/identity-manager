@@ -18,8 +18,8 @@ public record AccountMatch(AccountType type, Map<String, String> captures) {
         captures = Map.copyOf(captures);
     }
 
-    /** Référence de l'identité humaine capturée (groupe {@code identity}), s'il y en a une. */
+    /** Matricule de l'identité humaine déduit de l'identifiant (voir {@link AccountType#identityFrom}), s'il y en a un. */
     public Optional<String> identity() {
-        return Optional.ofNullable(captures.get(IDENTITY_GROUP));
+        return type.identityFrom(captures);
     }
 }

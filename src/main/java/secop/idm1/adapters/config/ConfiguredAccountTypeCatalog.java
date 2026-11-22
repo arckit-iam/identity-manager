@@ -51,7 +51,8 @@ public class ConfiguredAccountTypeCatalog implements AccountTypeCatalog {
         List<MetadataField> fields = type.getMetadata().stream()
                 .map(f -> new MetadataField(f.getName(), f.getType(), f.isRequired()))
                 .toList();
-        return new AccountType(type.getName(), type.getKind(), pattern, fields);
+        return new AccountType(type.getName(), type.getKind(), pattern, fields, type.getIdentityTemplate(),
+                type.getIdentifierTemplate());
     }
 
     @Override
