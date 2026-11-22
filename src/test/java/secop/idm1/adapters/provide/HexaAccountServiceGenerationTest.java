@@ -9,10 +9,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.time.Clock;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -27,7 +28,8 @@ import secop.idm1.domain.model.AccountType;
 import secop.idm1.domain.port.AccountProvider;
 import secop.idm1.domain.port.AccountTypeCatalog;
 import secop.idm1.domain.port.IdentityProvider;
-import secop.idm1.domain.port.JobPublisher;
+import secop.idm1.domain.port.OrderPublisher;
+import secop.idm1.domain.service.OrderSchedule;
 
 /** Comptes standard (I+6 chiffres) et admin (A+6 chiffres) dont l'identifiant est généré à partir du matricule. */
 class HexaAccountServiceGenerationTest {
@@ -49,7 +51,7 @@ class HexaAccountServiceGenerationTest {
     void setUp() {
         accounts = mock(AccountProvider.class);
         identities = mock(IdentityProvider.class);
-        JobPublisher publisher = mock(JobPublisher.class);
+        OrderPublisher publisher = mock(OrderPublisher.class);
         List<AccountType> types = List.of(standard, admin, manual, technical);
         service = new HexaAccountService(accounts, identities, new AccountTypeCatalog() {
             @Override
@@ -61,9 +63,8 @@ class HexaAccountServiceGenerationTest {
             public Optional<AccountType> findByName(String name) {
                 return types.stream().filter(t -> t.name().equals(name)).findFirst();
             }
-        }, publisher);
+        }, publisher, new OrderSchedule(Clock.systemUTC(), ZoneOffset.UTC));
         when(accounts.save(any(Account.class))).thenAnswer(i -> i.getArgument(0));
-        when(publisher.publishCreateAccount(any(Account.class))).thenReturn(UUID.randomUUID());
         when(identities.existsByEmployeeId("I000042")).thenReturn(true);
     }
 

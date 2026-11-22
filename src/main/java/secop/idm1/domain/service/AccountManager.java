@@ -3,6 +3,7 @@
 
 package secop.idm1.domain.service;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -21,10 +22,32 @@ public interface AccountManager {
 
     /**
      * Crée et provisionne un compte. Le type et l'identité sont déduits de l'identifiant par les regex
-     * quand ils ne sont pas fournis.
+     * quand ils ne sont pas fournis. L'identifiant peut être omis si le type sait le générer à partir du matricule
+     * de l'identité.
      */
-    /** L'identifiant peut être omis si le type sait le générer à partir du matricule de l'identité. */
-    Account createAccount(String identifier, String typeName, String employeeId, Map<String, Object> metadata);
+    default Account createAccount(String identifier, String typeName, String employeeId,
+            Map<String, Object> metadata) {
+        return createAccount(identifier, typeName, employeeId, metadata, null, null);
+    }
+
+    /**
+     * Comme ci-dessus, avec une validité planifiée : la création est exécutée au début du jour {@code startDate}
+     * (immédiatement si {@code null}) et la suppression au début du jour suivant {@code endDate} (jamais si {@code null}).
+     */
+    Account createAccount(String identifier, String typeName, String employeeId, Map<String, Object> metadata,
+            LocalDate startDate, LocalDate endDate);
+
+    /**
+     * Change la validité d'un compte : les ordres planifiés non exécutés sont annulés puis émis à nouveau. La date de
+     * début ne peut plus changer une fois le compte créé, ni la date de fin une fois le compte expiré.
+     */
+    Account updateDates(String identifier, LocalDate startDate, LocalDate endDate);
+
+    /**
+     * Annule les ordres planifiés pas encore exécutés : si la création est encore à venir, elle est annulée et le compte
+     * supprimé ; sinon la suppression planifiée à la date de fin est annulée et le compte n'expire plus.
+     */
+    void cancelPending(String identifier);
 
     Account updateMetadata(String identifier, Map<String, Object> metadata);
 

@@ -3,6 +3,7 @@
 
 package secop.idm1.domain.model;
 
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -20,6 +21,13 @@ public class Account {
     String identity;
     AccountSource source;
     Map<String, Object> metadata = new HashMap<>();
-    UUID jobId;
+    /** Premier jour de validité ; {@code null} : le compte est créé immédiatement. */
+    LocalDate startDate;
+    /** Dernier jour de validité (inclus) ; {@code null} : le compte n'expire pas. */
+    LocalDate endDate;
+    /** Ordre de création du compte. */
+    UUID orderId;
+    /** Ordre de suppression planifié à la date de fin, tant qu'il n'est pas exécuté. */
+    UUID endOrderId;
     OffsetDateTime createdAt;
 }

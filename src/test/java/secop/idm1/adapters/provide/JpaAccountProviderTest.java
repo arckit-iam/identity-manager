@@ -58,7 +58,10 @@ class JpaAccountProviderTest {
         account.setIdentity(identity);
         account.setSource(AccountSource.API);
         account.setMetadata(new HashMap<>(Map.of("department", "IT")));
-        account.setJobId(UUID.randomUUID());
+        account.setOrderId(UUID.randomUUID());
+        account.setEndOrderId(UUID.randomUUID());
+        account.setStartDate(java.time.LocalDate.of(2026, 7, 1));
+        account.setEndDate(java.time.LocalDate.of(2026, 12, 31));
         return account;
     }
 

@@ -54,8 +54,22 @@ public class RestAccountController {
     @PostMapping("/accounts")
     public ResponseEntity<AccountDto> createAccount(@RequestBody CreateAccountRequest request) {
         AccountDto created = mapper.toDto(accountManager.createAccount(
-                request.identifier(), request.type(), request.identity(), request.metadata()));
+                request.identifier(), request.type(), request.identity(), request.metadata(),
+                request.startDate(), request.endDate()));
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+
+    /** Replanifie la validité du compte ; les ordres encore en attente sont annulés puis émis à nouveau. */
+    @PutMapping("/accounts/{identifier}/dates")
+    public AccountDto updateDates(@PathVariable String identifier, @RequestBody DatesRequest request) {
+        return mapper.toDto(accountManager.updateDates(identifier, request.startDate(), request.endDate()));
+    }
+
+    /** Annule les ordres planifiés pas encore exécutés (création à venir ou suppression à la date de fin). */
+    @PostMapping("/accounts/{identifier}/cancel-pending")
+    public ResponseEntity<Void> cancelPending(@PathVariable String identifier) {
+        accountManager.cancelPending(identifier);
+        return ResponseEntity.noContent().build();
     }
 
     @PutMapping("/accounts/{identifier}/metadata")

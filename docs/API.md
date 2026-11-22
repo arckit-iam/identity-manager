@@ -54,7 +54,7 @@ Représentation :
 
 ```json
 { "identifier": "A000042", "type": "admin", "identity": "I000042",
-  "source": "API", "metadata": { "department": "IT" }, "jobId": "…", "createdAt": "…" }
+  "source": "API", "metadata": { "department": "IT" }, "startDate": null, "endDate": null, "orderId": "…", "endOrderId": null, "createdAt": "…" }
 ```
 
 `identity` est `null` pour un compte non corrélé ; `source` vaut `API` ou `DISCOVERED`.
@@ -63,12 +63,16 @@ Représentation :
 |---|---|---|
 | `GET /accounts?identity=&type=&uncorrelated=` | | `200` |
 | `GET /accounts/{identifier}` | | `200`, `404` |
-| `POST /accounts` | `{ "identifier", "type"?, "identity"?, "metadata"? }` | `201` ; le type et l'identité sont déduits par la regex si absents ; job `CREATE` publié ; `400` (aucun type ne correspond, métadonnées invalides), `404` (identité inconnue), `409` |
+| `POST /accounts` | `{ "identifier", "type"?, "identity"?, "metadata"?, "startDate"?, "endDate"? }` | `201` ; le type et l'identité sont déduits par la regex si absents ; ordre `CREATE` publié (différé à `startDate` si elle est future) ; `400` (aucun type ne correspond, métadonnées invalides), `404` (identité inconnue), `409` |
 | `PUT /accounts/{identifier}/metadata` | `{ "<champ>": valeur }` | `200`, `400`, `404` |
 | `PUT /accounts/{identifier}/identity` | `{ "identity": "e1234" }` | `200`, `404` |
 | `POST /accounts/correlate` | | `200` `{ "correlated": n }` |
-| `DELETE /accounts/{identifier}` | | `204` (job `DELETE` publié), `404` |
+| `PUT /accounts/{identifier}/dates` | `{ "startDate"?, "endDate"? }` (dates `AAAA-MM-JJ`) | `200`, `400`, `404` ; l'ordre en attente est annulé puis replanifié |
+| `POST /accounts/{identifier}/cancel-pending` | | `200`, `404`, `409` (aucun ordre en attente) |
+| `DELETE /accounts/{identifier}` | | `204` (ordre `DELETE` publié, ou ordre en attente annulé), `404` |
 
-## Job de provisioning
+## Ordre de provisioning
 
-`POST /jobs` d'arc-publisher : `targetType=IDENTITY`, `action=CREATE|DELETE`, `identityId=<identifier>`, `source=identity-manager`, `attributes` : `accountType`, `employeeId` (si corrélé), `metadata.<champ>`.
+Message de la file `arc.orders` (clé = identifiant de l'ordre) ou `POST /orders` d'arc-publisher : `targetType=IDENTITY`, `action=CREATE|DELETE`, `identityId=<identifier>`, `accountType`, `source=identity-manager`, `attributes` : `employeeId` (si corrélé), `metadata.<champ>`.
+
+Temporalité : `CREATE` est exécuté à `startDate` (immédiatement si absente ou atteinte), `DELETE` au lendemain de `endDate`. Un ordre non encore exécuté est annulé par un message `CANCEL` (ou `DELETE /orders/{id}`).

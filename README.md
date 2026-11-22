@@ -2,11 +2,11 @@
 
 Service de gestion des **identités humaines** et de leurs **comptes utilisateurs** (comptes nominatifs, administrateurs...) de la plateforme [Instant Access Provider](https://github.com/arckit-iam/InstantAccessPublisher).
 
-Chaque compte est corrélé à une identité humaine (matricule) grâce à une regex portée par son **type de compte**. Les comptes arrivent par l'API (un job de provisioning est alors publié auprès d'[arc-publisher](https://github.com/arckit-iam/arc-publisher)) ou par **découverte** à partir des événements consolidés (`arc.sync.identity`). Le pendant pour les comptes non utilisateurs (comptes de service) est [product-manager](https://github.com/arckit-iam/product-manager).
+Chaque compte est corrélé à une identité humaine (matricule) grâce à une regex portée par son **type de compte**. Les comptes arrivent par l'API (un **ordre** de provisioning est alors déposé dans la file `arc.orders` consommée par [arc-publisher](https://github.com/arckit-iam/arc-publisher), ou envoyé à son API) ou par **découverte** à partir des événements consolidés (`arc.sync.identity`). Le pendant pour les comptes non utilisateurs (comptes de service) est [product-manager](https://github.com/arckit-iam/product-manager).
 
 ```text
 Client ──► POST /accounts ──► identity-manager (PostgreSQL)
-                                   │ POST /jobs (IDENTITY / CREATE)
+                                   │ ordre IDENTITY / CREATE (Kafka arc.orders, ou POST /orders)
                                    ▼
                              arc-publisher ──► Kafka ──► agent ──► annuaire
 
@@ -26,13 +26,13 @@ arc-consolidator ──► Kafka arc.sync.identity ──► identity-manager (d
 secop.idm1/
   domain/
     model/      Identity, Account, AccountType, AccountKind, MetadataField...
-    port/       IdentityProvider, AccountProvider, JobPublisher, AccountTypeCatalog
+    port/       IdentityProvider, AccountProvider, OrderPublisher, AccountTypeCatalog
     service/    IdentityManager, AccountManager (logique métier)
     exception/  exceptions métier
   adapters/
     expose/     contrôleurs REST, DTO, mapper, sécurité
     provide/    persistance JPA et implémentations des services du domaine
-    publish/    ArcPublisherJobAdapter : client REST vers arc-publisher
+    publish/    KafkaOrderPublisher (canal par défaut, file arc.orders) et ArcPublisherOrderAdapter (canal API)
     config/     types de compte définis par la configuration du déploiement
     consume/    AccountDiscoveryListener : découverte via Kafka (arc.sync.identity)
 ```
@@ -60,11 +60,13 @@ Toutes les routes exigent un jeton `Authorization: Bearer <jwt>` émis par [arc-
 | `GET` | `/account-types` | `ARC_READER`, `ARC_PUBLISHER` ou `ARC_ADMIN` | Types de compte utilisateur configurés |
 | `GET` | `/accounts` | idem | Liste (filtres `identity`, `type`, `uncorrelated=true`) |
 | `GET` | `/accounts/{identifier}` | idem | Retourne un compte |
-| `POST` | `/accounts` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Crée un compte (job CREATE) ; identifiant facultatif si `type` et `identity` sont fournis (généré par gabarit) |
+| `POST` | `/accounts` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Crée un compte (ordre CREATE, différé à `startDate` si elle est future) ; identifiant facultatif si `type` et `identity` sont fournis (généré par gabarit) |
+| `PUT` | `/accounts/{identifier}/dates` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Modifie `startDate` / `endDate` (dernier jour inclus) ; l'ordre en attente est annulé puis replanifié |
+| `POST` | `/accounts/{identifier}/cancel-pending` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Annule l'ordre planifié non encore exécuté (`409` si aucun n'est en attente) |
 | `PUT` | `/accounts/{identifier}/metadata` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Remplace les métadonnées |
 | `PUT` | `/accounts/{identifier}/identity` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Corrèle manuellement le compte à une identité |
 | `POST` | `/accounts/correlate` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Rejoue les regex sur les comptes non corrélés |
-| `DELETE` | `/accounts/{identifier}` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Supprime le compte (job DELETE) |
+| `DELETE` | `/accounts/{identifier}` | `ARC_PUBLISHER` ou `ARC_ADMIN` | Supprime le compte (ordre DELETE, planifié au lendemain de `endDate` si elle est définie ; un ordre en attente est annulé) |
 
 Tout autre chemin est refusé.
 
@@ -120,10 +122,13 @@ Un compte découvert dont l'identité n'existe pas encore reste non corrélé ju
 | `ARC_SECURITY_JWK_SET_URI` | Clés publiques d'arc-auth (défaut `http://arc-auth:8082/.well-known/jwks.json`) |
 | `ARC_SECURITY_AUDIENCE` | Valeur attendue du claim `aud` (défaut `arc`) |
 | `ARC_AUTH_URL` | URL d'arc-auth (défaut `http://arc-auth:8082`) |
-| `ARC_AUTH_USERNAME` / `_PASSWORD` | Compte de service (membre de `arc-publishers`) avec lequel identity-manager appelle arc-publisher (obligatoires) |
-| `ARC_PUBLISHER_URL` | URL d'arc-publisher (défaut `http://arc-publisher:8081`) |
-| `ARC_PUBLISHER_TARGET_SYSTEM` | Système cible des jobs (défaut `ad://DC01`) |
-| `ARC_PUBLISHER_SOURCE` | Valeur du champ `source` des jobs (défaut `identity-manager`) |
+| `ARC_AUTH_USERNAME` / `_PASSWORD` | Compte de service (membre de `arc-publishers`) avec lequel identity-manager appelle arc-publisher (canal `api` uniquement) |
+| `ARC_ORDERS_CHANNEL` | Canal des ordres : `kafka` (défaut, file `arc.orders`) ou `api` (REST vers arc-publisher) |
+| `ARC_ORDERS_TOPIC` | Topic des ordres (défaut `arc.orders`) |
+| `ARC_ORDERS_ZONE` | Fuseau qui définit les jours de `startDate` / `endDate` (défaut `UTC`) |
+| `ARC_PUBLISHER_URL` | URL d'arc-publisher, canal `api` uniquement (défaut `http://arc-publisher:8081`) |
+| `ARC_PUBLISHER_TARGET_SYSTEM` | Système cible des ordres (défaut `ad://DC01`) |
+| `ARC_PUBLISHER_SOURCE` | Valeur du champ `source` des ordres (défaut `identity-manager`) |
 | `ARC_IDENTITY_EMPLOYEE_ID_PREFIX` | Préfixe des matricules générés (défaut `I`) |
 | `ARC_ACCOUNTS_TYPES_<n>_*` | Types de compte (voir ci-dessus) |
 | `ARC_CONTRACTS_TYPES_<n>_*` | Types de contrat (voir ci-dessus) |
@@ -142,7 +147,7 @@ cp .env.example .env     # puis éditer les mots de passe
 docker compose up --build
 ```
 
-L'API est exposée sur `http://localhost:8083`. Sans `arc-publisher` joignable, la création d'un compte échoue au moment de l'appel à `/jobs`.
+L'API est exposée sur `http://localhost:8083`. En canal `kafka`, les ordres attendent dans `arc.orders` si `arc-publisher` est arrêté ; en canal `api`, la création d'un compte échoue tant qu'il n'est pas joignable.
 
 ## Développement
 

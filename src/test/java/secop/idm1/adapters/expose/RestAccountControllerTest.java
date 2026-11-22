@@ -132,7 +132,7 @@ class RestAccountControllerTest {
 
     @Test
     void publisherCreatesAnAccount() throws Exception {
-        when(manager.createAccount(eq("e1234"), any(), any(), any())).thenReturn(account());
+        when(manager.createAccount(eq("e1234"), any(), any(), any(), any(), any())).thenReturn(account());
 
         mvc.perform(post("/accounts").header("Authorization", bearer("publisher"))
                         .contentType(MediaType.APPLICATION_JSON).content(BODY))
@@ -141,9 +141,53 @@ class RestAccountControllerTest {
     }
 
     @Test
+    void publisherCreatesAScheduledAccount() throws Exception {
+        Account scheduled = account();
+        scheduled.setStartDate(java.time.LocalDate.of(2026, 7, 1));
+        scheduled.setEndDate(java.time.LocalDate.of(2026, 12, 31));
+        scheduled.setOrderId(java.util.UUID.fromString("11111111-1111-1111-1111-111111111111"));
+        when(manager.createAccount("e1234", null, null, Map.of("department", "IT"),
+                java.time.LocalDate.of(2026, 7, 1), java.time.LocalDate.of(2026, 12, 31))).thenReturn(scheduled);
+
+        mvc.perform(post("/accounts").header("Authorization", bearer("publisher"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"identifier\":\"e1234\",\"metadata\":{\"department\":\"IT\"},"
+                                + "\"startDate\":\"2026-07-01\",\"endDate\":\"2026-12-31\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.startDate").value("2026-07-01"))
+                .andExpect(jsonPath("$.endDate").value("2026-12-31"))
+                .andExpect(jsonPath("$.orderId").value("11111111-1111-1111-1111-111111111111"));
+    }
+
+    @Test
+    void publisherReschedulesAnAccount() throws Exception {
+        when(manager.updateDates("e1234", null, java.time.LocalDate.of(2026, 12, 31))).thenReturn(account());
+
+        mvc.perform(put("/accounts/e1234/dates").header("Authorization", bearer("publisher"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"endDate\":\"2026-12-31\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(put("/accounts/e1234/dates").header("Authorization", bearer("reader"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void publisherCancelsPendingOrders() throws Exception {
+        org.mockito.Mockito.doThrow(new AccountConflictException("nothing")).when(manager).cancelPending("done");
+
+        mvc.perform(post("/accounts/e1234/cancel-pending").header("Authorization", bearer("publisher")))
+                .andExpect(status().isNoContent());
+        mvc.perform(post("/accounts/done/cancel-pending").header("Authorization", bearer("publisher")))
+                .andExpect(status().isConflict());
+        mvc.perform(post("/accounts/e1234/cancel-pending").header("Authorization", bearer("reader")))
+                .andExpect(status().isForbidden());
+        org.mockito.Mockito.verify(manager).cancelPending("e1234");
+    }
+
+    @Test
     void businessErrorsBecomeHttpStatuses() throws Exception {
-        when(manager.createAccount(eq("bad"), any(), any(), any())).thenThrow(new InvalidAccountException("bad"));
-        when(manager.createAccount(eq("dup"), any(), any(), any())).thenThrow(new AccountConflictException("dup"));
+        when(manager.createAccount(eq("bad"), any(), any(), any(), any(), any())).thenThrow(new InvalidAccountException("bad"));
+        when(manager.createAccount(eq("dup"), any(), any(), any(), any(), any())).thenThrow(new AccountConflictException("dup"));
 
         mvc.perform(post("/accounts").header("Authorization", bearer("publisher"))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"identifier\":\"bad\"}"))
